@@ -1288,20 +1288,18 @@ impl noq::UdpSender for Sender {
                 debug!(dst=%network_path, "dropped transmit: {err:#}");
                 Poll::Ready(Ok(()))
             }
-            Poll::Pending => {
-                // We do not want to block the next send which might be on a
-                // different transport.  Instead we let Noq handle this as a lost
-                // datagram.
-                // TODO: Revisit this: we might want to do something better.
-                trace!(dst=%network_path, "transport pending, dropped transmit");
-                Poll::Ready(Ok(()))
-            }
+            Poll::Pending => handle_transport_backpressure(&network_path),
         }
     }
 
     fn max_transmit_segments(&self) -> NonZeroUsize {
         self.sender.max_transmit_segments
     }
+}
+
+fn handle_transport_backpressure(network_path: &FourTuple) -> Poll<io::Result<()>> {
+    trace!(dst=%network_path, "transport backpressured, retaining transmit");
+    Poll::Pending
 }
 
 #[cfg(test)]
@@ -1377,6 +1375,19 @@ mod tests {
             selected.iter().take(4).copied().collect::<Vec<_>>(),
             vec![2, 1, 2, 1],
         );
+    }
+
+    #[test]
+    fn transport_backpressure_is_propagated_to_noq() {
+        let network_path = FourTuple::Ip {
+            remote: "127.0.0.1:1".parse().unwrap(),
+            local: None,
+        };
+
+        assert!(matches!(
+            handle_transport_backpressure(&network_path),
+            Poll::Pending
+        ));
     }
 
     fn custom_only_transports(custom: Vec<Box<dyn CustomEndpoint>>) -> Transports {
