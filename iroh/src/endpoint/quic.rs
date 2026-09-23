@@ -27,6 +27,7 @@ pub use noq::{
     OpenUni,              // iroh::endpoint::Connection
     PathStats,            // iroh::socket::remote_map::remote_state::PathInfo
     ReadDatagram,         // iroh::endpoint::Connection
+    ReadManyDatagrams,    // iroh::endpoint::Connection
     ReadError,            // noq::RecvStream
     ReadExactError,       // noq::RecvStream
     ReadToEndError,       // noq::RecvStream

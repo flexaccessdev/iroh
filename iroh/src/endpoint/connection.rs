@@ -41,7 +41,8 @@ use crate::{
         AfterHandshakeOutcome,
         quic::{
             AcceptBi, AcceptUni, Closed, ConnectionError, ConnectionStats, Controller,
-            ExportKeyingMaterialError, OpenBi, OpenUni, PathId, ReadDatagram, SendDatagram,
+            ExportKeyingMaterialError, OpenBi, OpenUni, PathId, ReadDatagram, ReadManyDatagrams,
+            SendDatagram,
             SendDatagramError, ServerConfig, Side, VarInt,
         },
     },
@@ -918,6 +919,22 @@ impl<T: ConnectionState> Connection<T> {
         self.inner.read_datagram()
     }
 
+    /// Receives a batch of application datagrams.
+    ///
+    /// This is the batch analogue of [`read_datagram`]: the returned future resolves
+    /// once at least one datagram is buffered, drains up to `out.len()` of them into
+    /// `out` in arrival order, and yields the count written. It takes the connection
+    /// lock once per batch instead of once per datagram.
+    ///
+    /// [`read_datagram`]: Self::read_datagram
+    #[inline]
+    pub fn read_many_datagrams<'a, 'b>(
+        &'a self,
+        out: &'b mut [bytes::Bytes],
+    ) -> ReadManyDatagrams<'a, 'b> {
+        self.inner.read_many_datagrams(out)
+    }
+
     /// Waits for the connection to be closed for any reason.
     ///
     /// Despite the return type's name, closed connections are often not an error condition
@@ -978,6 +995,26 @@ impl<T: ConnectionState> Connection<T> {
     #[inline]
     pub fn send_datagram(&self, data: bytes::Bytes) -> Result<(), SendDatagramError> {
         self.inner.send_datagram(data)
+    }
+
+    /// Transmits many unreliable, unordered application datagrams in a single call.
+    ///
+    /// This is the batch analogue of [`send_datagram`], taking the connection lock
+    /// once for the whole batch. Like [`send_datagram`], older queued datagrams may
+    /// be dropped to make room; check [`datagram_send_buffer_space`] first to avoid
+    /// that. Returns the number of datagrams queued. The batch is rejected with
+    /// [`SendDatagramError::TooLarge`] if any datagram exceeds
+    /// [`max_datagram_size`].
+    ///
+    /// [`send_datagram`]: Self::send_datagram
+    /// [`datagram_send_buffer_space`]: Self::datagram_send_buffer_space
+    /// [`max_datagram_size`]: Self::max_datagram_size
+    #[inline]
+    pub fn send_many_datagrams(
+        &self,
+        datagrams: &[bytes::Bytes],
+    ) -> Result<usize, SendDatagramError> {
+        self.inner.send_many_datagrams(datagrams)
     }
 
     /// Transmits `data` as an unreliable, unordered application datagram

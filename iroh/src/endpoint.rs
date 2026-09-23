@@ -109,6 +109,7 @@ pub use self::{
         FrameStats, FrameType, HandshakeTokenKey, HeaderKey, IdleTimeout, IncomingAlpns, Keys,
         MtuDiscoveryConfig, OpenBi, OpenUni, PacketKey, PathId, PathStats, QuicConnectError,
         QuicTransportConfig, QuicTransportConfigBuilder, ReadDatagram, ReadError, ReadExactError,
+        ReadManyDatagrams,
         ReadToEndError, RecvStream, ResetError, RttEstimator, SendDatagram, SendDatagramError,
         SendStream, ServerConfig, ServerConfigBuilder, Side, StoppedError, StreamId, TimeSource,
         TokenLog, TokenReuseError, TransportError, TransportErrorCode, TransportParameters,
