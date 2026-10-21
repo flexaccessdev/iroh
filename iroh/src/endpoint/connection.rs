@@ -1010,6 +1010,25 @@ impl<T: ConnectionState> Connection<T> {
         self.inner.send_many_datagrams(datagrams)
     }
 
+    /// Queues many unreliable, unordered application datagrams in a single call, dropping
+    /// none that are already queued.
+    ///
+    /// The non-evicting form of [`send_many_datagrams()`](Self::send_many_datagrams): datagrams
+    /// are queued in order until the send buffer is full, then the call stops and returns
+    /// `Ok(n)` for the `n` queued, `Ok(0)` when not even the first fits. The remainder is the
+    /// caller's to retry once space frees up, for example by awaiting
+    /// [`send_datagram_wait()`](Self::send_datagram_wait) on the next one.
+    ///
+    /// The batch is rejected with [`SendDatagramError::TooLarge`] if any datagram exceeds the
+    /// maximum datagram size.
+    #[inline]
+    pub fn try_send_many_datagrams(
+        &self,
+        datagrams: &[Bytes],
+    ) -> Result<usize, SendDatagramError> {
+        self.inner.try_send_many_datagrams(datagrams)
+    }
+
     /// Transmits `data` as an unreliable, unordered application datagram
     ///
     /// Unlike [`send_datagram()`], this method will wait for buffer space during congestion
