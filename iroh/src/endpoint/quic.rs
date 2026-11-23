@@ -238,9 +238,9 @@ impl QuicTransportConfigBuilder {
     ///
     /// With this set above `stream_receive_window`, a stream starts with that window and its
     /// window doubles, up to this value, each time half of it has been read within two round
-    /// trips: the application is then keeping up with a sender the window is holding back. A
-    /// stream that is read slower than that, or not at all, keeps the window it has. What the
-    /// streams of a connection take this way is limited by
+    /// trips (of 5 ms at least): the application is then keeping up with a sender the window
+    /// is holding back. A stream that is read slower than that, or not at all, keeps the
+    /// window it has. What the streams of a connection take this way is limited by
     /// [`stream_receive_window_budget`](Self::stream_receive_window_budget).
     ///
     /// Defaults to zero: every stream keeps `stream_receive_window`.
