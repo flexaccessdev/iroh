@@ -227,6 +227,44 @@ impl QuicTransportConfigBuilder {
         self
     }
 
+    /// The most a stream's receive window may grow to, from the
+    /// [`stream_receive_window`](Self::stream_receive_window) it starts with.
+    ///
+    /// A stream carries at most one receive window per round trip, so a bulk transfer over a
+    /// long path wants a large one. But the window is also what a stream buffers when the
+    /// application reads it slower than the path delivers: a window large enough for the bulk
+    /// transfer, given to every stream from the start, is memory every stalled stream can be
+    /// made to fill.
+    ///
+    /// With this set above `stream_receive_window`, a stream starts with that window and its
+    /// window doubles, up to this value, each time half of it has been read within two round
+    /// trips: the application is then keeping up with a sender the window is holding back. A
+    /// stream that is read slower than that, or not at all, keeps the window it has. What the
+    /// streams of a connection take this way is limited by
+    /// [`stream_receive_window_budget`](Self::stream_receive_window_budget).
+    ///
+    /// Defaults to zero: every stream keeps `stream_receive_window`.
+    pub fn max_stream_receive_window(mut self, value: VarInt) -> Self {
+        self.0.max_stream_receive_window(value);
+        self
+    }
+
+    /// How many bytes the streams of a connection may hold between them beyond
+    /// `stream_receive_window` each, when
+    /// [`max_stream_receive_window`](Self::max_stream_receive_window) lets their windows grow.
+    ///
+    /// Growth is taken out of this budget and returned when the stream ends or is stopped. A
+    /// stream the budget has nothing left for keeps the window it has and goes on receiving:
+    /// unlike [`receive_window`](Self::receive_window), this is not credit that streams share.
+    /// Worst-case memory use of a connection is then `stream_receive_window` for each
+    /// concurrent stream, plus this.
+    ///
+    /// Defaults to no limit.
+    pub fn stream_receive_window_budget(mut self, value: u64) -> Self {
+        self.0.stream_receive_window_budget(value);
+        self
+    }
+
     /// Maximum number of bytes the peer may transmit across all streams of a connection before
     /// becoming blocked.
     ///
