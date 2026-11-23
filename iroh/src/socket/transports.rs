@@ -1297,9 +1297,30 @@ impl noq::UdpSender for Sender {
     }
 }
 
+/// What to tell noq when the transport for `network_path` cannot take a
+/// transmit now.
+///
+/// noq keeps a transmit its sender returns `Pending` for and retries it before
+/// it builds anything else for the connection, on any path. For an IP path that
+/// is the right backpressure: the socket's send buffer drains in microseconds,
+/// and a transmit discarded here would only come back as loss. A relay's send
+/// queue is shared by every connection of the endpoint and drains at the pace
+/// of the relay's TCP connection, which can be slow or stalled. Waiting on it
+/// would hold the connection's packets for its direct path behind one packet
+/// for its relay path, so that transmit is dropped and noq recovers it as a
+/// lost datagram, as it does upstream. A custom transport is treated like a
+/// relay: nothing is known about how long it stays blocked.
 fn handle_transport_backpressure(network_path: &FourTuple) -> Poll<io::Result<()>> {
-    trace!(dst=%network_path, "transport backpressured, retaining transmit");
-    Poll::Pending
+    match network_path {
+        FourTuple::Ip { .. } => {
+            trace!(dst=%network_path, "transport backpressured, retaining transmit");
+            Poll::Pending
+        }
+        FourTuple::Relay { .. } | FourTuple::Custom { .. } => {
+            trace!(dst=%network_path, "transport pending, dropped transmit");
+            Poll::Ready(Ok(()))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1387,6 +1408,21 @@ mod tests {
         assert!(matches!(
             handle_transport_backpressure(&network_path),
             Poll::Pending
+        ));
+    }
+
+    /// A full relay queue must not hold up the connection's other paths: the
+    /// transmit is dropped rather than kept for noq to retry first.
+    #[test]
+    fn relay_backpressure_drops_the_transmit() {
+        let network_path = FourTuple::Relay {
+            url: "https://relay.example".parse().unwrap(),
+            endpoint_id: iroh_base::SecretKey::from_bytes(&[7; 32]).public(),
+        };
+
+        assert!(matches!(
+            handle_transport_backpressure(&network_path),
+            Poll::Ready(Ok(()))
         ));
     }
 
