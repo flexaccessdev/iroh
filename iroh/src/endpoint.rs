@@ -3936,6 +3936,34 @@ mod tests {
         )
     }
 
+    /// A close cut short after it began is finished by the next close, which
+    /// returns only once the endpoint is closed.
+    #[tokio::test]
+    #[traced_test]
+    async fn test_close_cut_short_is_finished_by_the_next() -> Result {
+        let ep = Endpoint::builder(presets::Minimal)
+            .relay_mode(RelayMode::Disabled)
+            .bind()
+            .await?;
+        let closed = ep.closed();
+        {
+            // Polled once, then dropped.
+            let mut close = std::pin::pin!(ep.close());
+            tokio::select! {
+                biased;
+                _ = &mut close => {}
+                _ = std::future::ready(()) => {}
+            }
+        }
+        assert_eq!(now_or_never(closed), Some(()), "the close began");
+        assert!(!ep.is_closed(), "and was cut short");
+        time::timeout(Duration::from_secs(10), ep.close())
+            .await
+            .std_context("the next close returns")?;
+        assert!(ep.is_closed());
+        Ok(())
+    }
+
     #[tokio::test]
     #[traced_test]
     async fn test_closed_endpoint_behaviour() -> Result {

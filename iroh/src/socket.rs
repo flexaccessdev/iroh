@@ -207,6 +207,9 @@ pub(crate) struct EndpointInner {
     sock: Arc<Socket>,
     // empty when shutdown
     actor_task: Mutex<Option<AbortOnDropHandle<()>>>,
+    /// Held by [`Self::close`] throughout, so one close runs at a time: a later
+    /// one waits for it, and finishes it if it was cut short.
+    closing: tokio::sync::Mutex<()>,
     /// Channel to send to the internal actor.
     actor_sender: mpsc::Sender<ActorMessage>,
     // noq endpoint
@@ -306,14 +309,6 @@ impl Default for ShutdownState {
 }
 
 impl ShutdownState {
-    /// Whether the endpoint has started closing, or is already closed.
-    ///
-    /// This is true once [`crate::Endpoint::close`] is called, and remains true forever
-    /// after. Tasks might still be shutting down.
-    fn is_closing(&self) -> bool {
-        self.at_close_start.is_cancelled()
-    }
-
     /// Whether the endpoint is fully closed and all tasks stopped.
     ///
     /// The endpoint will be drained, all transports and sockets will be closed.
@@ -402,11 +397,6 @@ impl Socket {
     /// Whether the iroh endpoint is closed and all its actors stopped.
     pub(crate) fn is_closed(&self) -> bool {
         self.shutdown.is_closed()
-    }
-
-    /// Whether [`crate::Endpoint::close`] has been called.
-    fn is_closing(&self) -> bool {
-        self.shutdown.is_closing()
     }
 
     /// Returns a future that resolves once endpoint shutdown has started.
@@ -1110,6 +1100,7 @@ impl EndpointInner {
             sock,
             actor_sender,
             actor_task,
+            closing: tokio::sync::Mutex::new(()),
             endpoint,
             runtime,
             static_config,
@@ -1123,14 +1114,21 @@ impl EndpointInner {
 
     /// Closes the iroh endpoint.
     ///
-    /// Only the first close does anything. Any later closes return nil.  Polling the socket
+    /// Returns once the endpoint is closed. A close called while another runs waits for
+    /// it, and one called after a close was cut short (its future dropped, or its
+    /// runtime shut down, part way) runs the remaining steps: each step can be taken
+    /// again. Polling the socket
     /// ([`noq::AsyncUdpSocket::poll_recv`]) will return [`Poll::Pending`] indefinitely
     /// after this call.
     ///
     /// [`Poll::Pending`]: std::task::Poll::Pending
     #[instrument(skip_all, parent = self.sock.span.clone())]
     pub(crate) async fn close(&self) {
-        if self.sock.is_closed() || self.sock.is_closing() {
+        if self.sock.is_closed() {
+            return;
+        }
+        let _closing = self.closing.lock().await;
+        if self.sock.is_closed() {
             return;
         }
         trace!("socket closing...");
@@ -1210,7 +1208,8 @@ impl EndpointInner {
     /// `iroh::Endpoint` is dropped without first calling `Endpoint::close`.
     #[instrument(skip_all, parent = self.sock.span.clone())]
     pub(crate) fn abort(&self) {
-        if self.sock.is_closed() || self.sock.is_closing() {
+        // Also after a close that was cut short: what it left running is aborted.
+        if self.sock.is_closed() {
             return;
         }
         trace!("socket aborting...");
